@@ -28,7 +28,7 @@ with pdfplumber.open(file) as pdf:
         'doctop',  # 字符顶部与文档顶部的距离。
     ]
     pdf_df = pd.DataFrame(columns=columns)
-    for i in range(7,8):
+    for i in range(6,7):
         page = pdf.pages[i]  # 第一页的信息
         # 获取字体所有基础信息
         page_df = pd.DataFrame(columns=columns)
@@ -39,7 +39,7 @@ with pdfplumber.open(file) as pdf:
             data = pd.DataFrame.from_dict(text,orient='index').stack().unstack(0)
             page_df = pd.concat([page_df,data],sort=True)
             # print(data)
-
+        page_df.reset_index(drop=True, inplace=True)
         PDF_Standard(page_df).standard()
         # 本页数据解析完成后，进行清洗
         # bottom_list = page_df['bottom'].unique().tolist()

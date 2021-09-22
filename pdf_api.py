@@ -30,15 +30,19 @@ class PDF_Standard():
     def sting_join(self, df, cod, index_type=None):
         # 如果有进入行合并逻辑
         if index_type:
-            print(index_type)
             columns = df.columns
             data = pd.DataFrame(columns=columns.tolist() + ['cod'])
-            for num in range(len(index_type)):
+
+            # 匹配所有数据内容
+            for num in range(len(index_type)+1):
                 dc_dict = {}
                 if num == 0:
-                    dc = df.loc[:index_type[num], :]
+                    dc = df.iloc[:index_type[num], :]
+                elif num == len(index_type):
+                    dc = df.iloc[index_type[num - 1]:, :]
                 else:
-                    dc = df.loc[index_type[num - 1]:index_type[num], :]
+                    dc = df.iloc[index_type[num - 1]:index_type[num], :]
+
                 for key in columns:
                     if key in ['x0', 'x1', 'y0', 'y1']:
                         dc_dict[key] = dc[key].min()
@@ -60,9 +64,11 @@ class PDF_Standard():
                 else:
                     df_dict[key] = df[key].tolist()[0]  if len(df[key].tolist()) > 0 else ''
             df_dict['cod'] = cod
+
             data = pd.DataFrame.from_dict(df_dict,orient='index').stack().unstack(0)
 
         return data
+
 
     def row_body(self,bottom_list):
         # 清洗行数据
@@ -71,7 +77,10 @@ class PDF_Standard():
         for cod, row in enumerate(bottom_list):
             if row < up_index:
                 continue
-            r_df = self.page_data.loc[(self.page_data['bottom'] >=row-2) & (self.page_data['bottom'] <=row+2)]
+
+            # 允许字体上下偏移字体高度的4/5
+            height = int(self.page_data.loc[self.page_data['bottom']==row,'height'].values[0])//5*4
+            r_df = self.page_data.loc[(self.page_data['bottom'] >=row-height) & (self.page_data['bottom'] <=row+height)]
             x_split_list = r_df[['x0','x1']].values
 
             # 获取行中不连续list
@@ -80,12 +89,14 @@ class PDF_Standard():
                 if x_split_list[index][0] - x_split_list[index - 1][1] > 1:
                     index_list.append(index)
 
+            # 清洗获取本行数据
             df_tr = self.sting_join(r_df, cod, index_list)
             data = pd.concat([data, df_tr], sort=True)
 
-            up_index = row + 2
+            print(df_tr.values)
 
-
+            # 重新定义本行范围
+            up_index = row + int(height)
 
         # 重新刷新index
         data.reset_index(drop=True, inplace=True)
@@ -95,7 +106,7 @@ class PDF_Standard():
         # 获取页面信息后开始返回标准化DataFrame
 
         # 获取页面中每行信息
-        self.bottom_list = self.page_data['bottom'].unique().tolist()
+        self.bottom_list = self.page_data['bottom'].unique()
         self.bottom_list.sort()
         self.row_body(self.bottom_list)
 
