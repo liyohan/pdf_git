@@ -1,6 +1,8 @@
 import pdfplumber
 import pandas as pd
-from pdf_api import PDF_Standard
+import pdf_table_frame
+
+from pdf_api import PDF_Standard, PDF_Tabel_Standard
 
 
 file = '/home/sunday/Documents/win10/GIT/PDF_cs/111.pdf'
@@ -27,23 +29,30 @@ with pdfplumber.open(file) as pdf:
         'bottom',  # 字符底部到页面顶部的距离。
         'doctop',  # 字符顶部与文档顶部的距离。
     ]
-    pdf_df = pd.DataFrame(columns=columns)
-    for i in range(6,7):
+    pdf_df = pd.DataFrame()
+    for i in range(8,9):
+        print(i)
         page = pdf.pages[i]  # 第一页的信息
         # 获取字体所有基础信息
         page_df = pd.DataFrame(columns=columns)
         for num, text in enumerate(page.objects['char']):
-            # print(text)
-            # if num == 30:
-            #     break
             data = pd.DataFrame.from_dict(text,orient='index').stack().unstack(0)
             page_df = pd.concat([page_df,data],sort=True)
-            # print(data)
-        page_df.reset_index(drop=True, inplace=True)
-        PDF_Standard(page_df).standard()
+
         # 本页数据解析完成后，进行清洗
-        # bottom_list = page_df['bottom'].unique().tolist()
-        # print(bottom_list)
+        page_df.reset_index(drop=True, inplace=True)
+        data = PDF_Standard(page_df).standard()
+
+        # 获取表格内容 (x0, top, x1, bottom)
+        tabel_index_list = pdf_table_frame.find_table_coord(page)
+        print(type(tabel_index_list))
+        # 整合表格内容与段落内容
+        data = PDF_Tabel_Standard(data, tabel_index_list).table_standard()
+
+        # pdf_df = pd.concat([pdf_df, data])
+
+    # pdf_df.reset_index(drop=True, inplace=True)
+    # pdf_df.to_csv('model.csv')
 
     # print(pdf_df)
     # print(pdf_df.info())

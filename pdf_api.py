@@ -19,7 +19,6 @@ import pandas as pd
     doctop:字符顶部与文档顶部的距离。
 '''
 
-
 class PDF_Standard():
 
     def __init__(self,page_data):
@@ -78,8 +77,8 @@ class PDF_Standard():
             if row < up_index:
                 continue
 
-            # 允许字体上下偏移字体高度的4/5
-            height = int(self.page_data.loc[self.page_data['bottom']==row,'height'].values[0])//5*4
+            # 允许字体上下偏移字体高度的1/5
+            height = int(self.page_data.loc[self.page_data['bottom']==row,'height'].values[0])//5
             r_df = self.page_data.loc[(self.page_data['bottom'] >=row-height) & (self.page_data['bottom'] <=row+height)]
             x_split_list = r_df[['x0','x1']].values
 
@@ -93,21 +92,71 @@ class PDF_Standard():
             df_tr = self.sting_join(r_df, cod, index_list)
             data = pd.concat([data, df_tr], sort=True)
 
-            print(df_tr.values)
-
             # 重新定义本行范围
             up_index = row + int(height)
 
         # 重新刷新index
         data.reset_index(drop=True, inplace=True)
 
+        return data
 
+
+    # 获取页面信息后开始返回标准化DataFrame
     def standard(self):
-        # 获取页面信息后开始返回标准化DataFrame
-
         # 获取页面中每行信息
         self.bottom_list = self.page_data['bottom'].unique()
         self.bottom_list.sort()
-        self.row_body(self.bottom_list)
+        data = self.row_body(self.bottom_list)
+        return data
 
-        pass
+
+
+class PDF_Tabel_Standard():
+
+    def __init__(self, data, tabel_index_list):
+        self.data = data
+        self.tabel_index_list = tabel_index_list
+
+    def table_standard(self):
+        # 表格与段落的结构清洗
+        if self.tabel_index_list:
+            tabel_list = ['x0', 'top', 'x1', 'bottom']
+            # 整合单元格数据内容
+            tabel_object = pd.DataFrame()
+            for tabel in self.tabel_index_list:
+                tabel_data = {}
+                tabel_df = self.data.loc[(self.data['x0']>tabel[0])&(self.data['x1']<tabel[2])&(self.data['top']>tabel[1])&(self.data['bottom']<tabel[3])]
+
+                # 剔除表格元素内容
+                self.data.drop(tabel_df.index, inplace=True)
+
+                # 对表格内容进行整合
+                for key in self.data.columns:
+                    if key in tabel_list:
+                        tabel_data[key] = tabel[tabel_list.index(key)]
+                    elif key in ['text', 'y1', 'adv']:
+                        tabel_data[key] = ''.join(tabel_df[key].unique()) if key == 'text' else tabel_df[key].max()
+                    else:
+                        tabel_data[key] = tabel_df[key].min()
+
+                tabel_data = pd.DataFrame.from_dict(tabel_data, orient='index').stack().unstack(0)
+                tabel_object = pd.concat([tabel_object, tabel_data])
+
+            # 表格段落刷新
+            for tabel_para in tabel_object[['top', 'bottom']].drop_duplicates().values:
+                tabel_object.loc[(tabel_object['top']==tabel_para[0])&(tabel_object['bottom']==tabel_para[1]),'cod'] = tabel_object.loc[(tabel_object['top']==tabel_para[0])&(tabel_object['bottom']==tabel_para[1])]['cod'].min()
+
+            # 整合处理
+            tabel_object['type'] = 'tbl'
+            self.data['type'] = 'para'
+
+            # 重新排序
+            self.data = pd.concat([self.data, tabel_object]).sort_values(by=['cod', 'x0'], ascending=[True, True])
+            sort_cod = self.data['cod'].unique().tolist()
+            self.data['cod'] = self.data['cod'].apply(lambda x:sort_cod.index(x))
+            self.data.reset_index(drop=True, inplace=True)
+
+            print(self.data)
+
+        return self.data
+
