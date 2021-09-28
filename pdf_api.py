@@ -1,4 +1,10 @@
+import re
 import pandas as pd
+import numpy as np
+import copy
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.externals import joblib
 
 '''
     text:例如，“z”或“Z”或“”。
@@ -78,8 +84,8 @@ class PDF_Standard():
                 continue
 
             # 允许字体上下偏移字体高度的1/5
-            height = int(self.page_data.loc[self.page_data['bottom']==row,'height'].values[0])//5
-            r_df = self.page_data.loc[(self.page_data['bottom'] >=row-height) & (self.page_data['bottom'] <=row+height)]
+            height = (int(self.page_data.loc[self.page_data['bottom']==row,'height'].values[0])//5)
+            r_df = self.page_data.loc[(self.page_data['bottom'] >= row-height) & (self.page_data['bottom'] <=row+height)]
             x_split_list = r_df[['x0','x1']].values
 
             # 获取行中不连续list
@@ -116,8 +122,44 @@ class PDF_Tabel_Standard():
     def __init__(self, data, tabel_index_list):
         self.data = data
         self.tabel_index_list = tabel_index_list
+        self.clf_list = ['adv', 'bottom', 'cod', 'doctop', 'height', 'non_stroking_color',
+            'page_number', 'size', 'stroking_color', 'text', 'top', 'width', 'x0',
+            'x1', 'y0', 'y1']
 
-    def table_standard(self):
+
+    def get_type(self, text):
+        if re.search('^[\(（]?[一二三四五六七八九十]+[\)）]?', text):
+            return 1
+        else:
+            return 0
+
+    # 区分页眉页脚并剔除
+    def delet_ymyj(self, data, clf, config):
+        # 获取页眉页脚参数
+        config_ymyj_list = config['ymyj_list']['values'].split(',')
+
+        delet_data = data.drop(['object_type', 'fontname', 'upright'], axis=1)
+        for i in config_ymyj_list + ['text']:  # 从定义完整列表中获取数据
+            if i == 'text':
+                continue
+            if i not in delet_data.columns:
+                delet_data[i] = 0
+            delet_data[i] = delet_data[i].fillna(0)
+            delet_data[i] = delet_data[i].apply(lambda x: sum(x) if type(x) in [set, tuple, list, np.array] else x)
+            delet_data[i] = delet_data[i].astype('float32')
+        delet_data['len_str'] = delet_data['text'].apply(lambda x: len(x))
+        delet_data['is_mulu'] = delet_data['text'].apply(lambda x: 1 if '......' in x else 0)
+        delet_data['is_biaoti'] = delet_data['text'].apply(self.get_type)
+        delet_data = delet_data.drop(['text'], axis=1)
+
+        # 调用模型
+        delet_data = clf.predict(delet_data[config_ymyj_list])
+        data['is_ymyj'] = delet_data
+        data = data.loc[data['is_ymyj'] == 2]
+        data.drop('is_ymyj', axis=1, inplace=True)
+        return data
+
+    def table_standard(self, clf, config):
         # 表格与段落的结构清洗
         if self.tabel_index_list:
             tabel_list = ['x0', 'top', 'x1', 'bottom']
@@ -137,26 +179,91 @@ class PDF_Tabel_Standard():
                     elif key in ['text', 'y1', 'adv']:
                         tabel_data[key] = ''.join(tabel_df[key].unique()) if key == 'text' else tabel_df[key].max()
                     else:
-                        tabel_data[key] = tabel_df[key].min()
+                        try:
+                            tabel_data[key] = tabel_df[key].min()
+                        except:
+                            # 当无法进行对比获取数据时获取中间数据
+                            tabel_data[key] = tabel_df.iloc[len(tabel_df[key])//2, :][key]
 
                 tabel_data = pd.DataFrame.from_dict(tabel_data, orient='index').stack().unstack(0)
-                tabel_object = pd.concat([tabel_object, tabel_data])
+                tabel_object = pd.concat([tabel_object, tabel_data], sort=True)
 
             # 表格段落刷新
             for tabel_para in tabel_object[['top', 'bottom']].drop_duplicates().values:
                 tabel_object.loc[(tabel_object['top']==tabel_para[0])&(tabel_object['bottom']==tabel_para[1]),'cod'] = tabel_object.loc[(tabel_object['top']==tabel_para[0])&(tabel_object['bottom']==tabel_para[1])]['cod'].min()
 
-            # 整合处理
             tabel_object['type'] = 'tbl'
-            self.data['type'] = 'para'
 
-            # 重新排序
-            self.data = pd.concat([self.data, tabel_object]).sort_values(by=['cod', 'x0'], ascending=[True, True])
-            sort_cod = self.data['cod'].unique().tolist()
-            self.data['cod'] = self.data['cod'].apply(lambda x:sort_cod.index(x))
-            self.data.reset_index(drop=True, inplace=True)
+        # 行合并
+        data = pd.DataFrame()
+        for cod in self.data['cod'].unique():
+            para_dict = {}
+            para_data = self.data.loc[self.data['cod'] == cod]
+            for key in self.data.columns:
+                if key in ['x1','y1','text']:
+                    para_dict[key] = ''.join(para_data[key].values.tolist()).strip() if key == 'text' else para_data[key].max()
+                else:
+                    try:
+                        para_dict[key] = para_data[key].min()
+                    except:
+                        # 当无法进行对比获取数据时获取中间数据
+                        para_dict[key] = para_data.iloc[len(para_data[key])//2, :][key]
+            data = pd.concat([data, pd.DataFrame.from_dict(para_dict, orient='index').stack().unstack(0)], sort=True)
+        data = data.loc[data['text'] != '']
 
-            print(self.data)
+        # 区分页眉页脚并剔除
+        data = self.delet_ymyj(data, clf, config)
 
-        return self.data
+        # 整合处理
+        data['type'] = 'para'
 
+        # 重新排序
+        data = pd.concat([data, tabel_object], sort=True).sort_values(by=['cod', 'x0'], ascending=[True, True]) if self.tabel_index_list else data
+        sort_cod = data['cod'].unique().tolist()
+        data['cod'] = data['cod'].apply(lambda x: sort_cod.index(x))
+        data.reset_index(drop=True, inplace=True)
+
+        # print(self.data)
+
+        return data
+
+
+# 获取是否连续para 格式为[ type, ...]
+def get_lin_type(type_list):
+    return_list = []
+    for i in range(len(type_list)-1):
+        if type_list[i] == 'para' and type_list[i+1] == 'para':
+            return_list.append(1)
+        else:
+            return_list.append(0)
+    return_list.append(0)
+    return return_list
+
+# 获取下一个是否包含□/√ 格式为[text, ...]
+def next_is_shiyong(text):
+    return_list = []
+    for i in range(len(text)-1):
+        if re.search('^□.*√.*', str(text[i+1])):
+            return_list.append(1)
+        else:
+            return_list.append(0)
+    return_list.append(0)
+    return return_list
+
+# 段落处理
+def para_line(pdf_df, para_clf, config):
+    new_para_df = copy.deepcopy(pdf_df)
+    new_para_df['is_continue'] = get_lin_type(new_para_df['type'].values)
+    new_para_df['is_next_shiyong'] = next_is_shiyong(new_para_df['text'].values)
+    para_data = new_para_df.loc[new_para_df['type'] == 'para'].copy()
+    for key in ['x0', 'x1', 'y0', 'y1', 'top', 'bottom', 'doctop', 'size', 'height', 'width', 'adv']:
+        para_list = para_data[key].tolist()[1:]
+        para_list.append(0)
+        para_data[key + '_next'] = para_list
+    para_data['len_str'] = para_data['text'].apply(lambda x: len(x))
+    para_data['is_mulu'] = para_data['text'].apply(lambda x: 1 if '......' in x else 0)
+    para_data.drop(['non_stroking_color','stroking_color', 'fontname', 'text', 'object_type', 'upright', 'type','cod','page_number'], axis=1, inplace=True)
+    # 调用模型
+    para_data['is_para'] = para_clf.predict(para_data[config['para_list']['values'].split(',')])
+    pdf_df = pd.merge(pdf_df, para_data[['is_para']], how='left', left_index=True, right_index=True)
+    return pdf_df

@@ -1,14 +1,18 @@
 import pdfplumber
 import pandas as pd
 import pdf_table_frame
+import configparser
 
-from pdf_api import PDF_Standard, PDF_Tabel_Standard
+
+from sklearn.externals import joblib
+from pdf_api import *
 
 
 file = '/home/sunday/Documents/win10/GIT/PDF_cs/111.pdf'
+# file = '2016-10-31_b6b486035cd04b6f6aad5bb366a173b1.pdf'
 with pdfplumber.open(file) as pdf:
-
-    print(pdf.pages)
+    config = configparser.ConfigParser()
+    config.read('dict.conf', encoding='utf-8')
 
     # 定义整个pdf解析数据
     columns = [
@@ -29,12 +33,21 @@ with pdfplumber.open(file) as pdf:
         'bottom',  # 字符底部到页面顶部的距离。
         'doctop',  # 字符顶部与文档顶部的距离。
     ]
+
+    # 导入页眉页脚判断模型
+    clf = joblib.load('ym.pkl')
+
+    # 段落模型
+    para_clf = joblib.load('para.pkl')
+
     pdf_df = pd.DataFrame()
-    for i in range(8,9):
+    for i in range(len(pdf.pages)):
         print(i)
         page = pdf.pages[i]  # 第一页的信息
         # 获取字体所有基础信息
         page_df = pd.DataFrame(columns=columns)
+        if 'char' not in page.objects:
+            continue
         for num, text in enumerate(page.objects['char']):
             data = pd.DataFrame.from_dict(text,orient='index').stack().unstack(0)
             page_df = pd.concat([page_df,data],sort=True)
@@ -45,14 +58,20 @@ with pdfplumber.open(file) as pdf:
 
         # 获取表格内容 (x0, top, x1, bottom)
         tabel_index_list = pdf_table_frame.find_table_coord(page)
-        print(type(tabel_index_list))
         # 整合表格内容与段落内容
-        data = PDF_Tabel_Standard(data, tabel_index_list).table_standard()
+        data = PDF_Tabel_Standard(data, tabel_index_list).table_standard(clf, config)
 
-        # pdf_df = pd.concat([pdf_df, data])
+        pdf_df = pd.concat([pdf_df, data], sort=True)
 
-    # pdf_df.reset_index(drop=True, inplace=True)
-    # pdf_df.to_csv('model.csv')
+    pdf_df.reset_index(drop=True, inplace=True)
+    # 段落连续模型判断
+    pdf_df = para_line(pdf_df, para_clf, config)
+
+    pdf_df.reset_index(drop=True, inplace=True)
+    pdf_df.to_csv('model9_return.csv')
+
+
+
 
     # print(pdf_df)
     # print(pdf_df.info())
