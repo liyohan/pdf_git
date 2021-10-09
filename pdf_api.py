@@ -246,7 +246,8 @@ class Cont_Para_Tbl_Stand():
         self.para = page_df.loc[page_df['type'] == 'para']  # 段落
         self.tbl = page_df.loc[page_df['type'] == 'tbl']  # 表格
         self.check = page_df.loc[page_df['type'] == 'check']  # 复选框
-        self.re_list = config['re_remove_list']['values'].split(',')  # 需要剔除匹配前置格式
+        self.re_list = config['re_hive_list']['values'].split(',')  # 需要匹配前置格式
+        self.para_fist_stand = config['para_fist_stand']['values'].split('|')  # 需要匹配前置格式
 
     # 递归设置目录标题层级
     def cont_stand(self, cont_file, cont_num=1, para_type=True):  # para_type：控制是否需要自动填充下一层级
@@ -257,17 +258,18 @@ class Cont_Para_Tbl_Stand():
             cont = re.match('^([%s]{0,2}[1一]{1})' % '|'.join(self.re_list), cont_str)
             if cont:
                 cont = cont.group(0)
-                if re.search('^[{（\(]?[0-9]{2,4}', cont_str):  # 若匹配到全部为数字的情况剔除
+                if re.search('^[{（\(]?[0-9]{2,4}|^[\-0-9,\.]*$', cont_str):  # 若匹配到全部为数字的情况剔除
                     cont = ''
                     continue
                 break
         # 第一次匹配数据“第一节”
         if cont:
             if len(cont) > 1:
-                cont_['cont_num'] = cont_['text'].apply(lambda x: cont_num if re.search(r'^%s' % cont[0] if cont[0] != '(' else '\(', str(x)) and '附件' not in x else 0)
+                cont_['cont_num'] = cont_['text'].apply(lambda x: cont_num if re.search(r'^%s[0-9一二三四五六七八九十]{1,2}\D' % (cont[0] if cont[0] != '(' else '\('), str(x)) and '附件' not in x else 0)
             else:
                 cont_str = cont_.iloc[num, :]['text']
-                cont_['cont_num'] = cont_['text'].apply(lambda x: cont_num if re.search(r'^[0-9一二三四五六七八九十]{1,2}%s' % cont_str[1], x) else 0)
+                if cont_str[1] in self.para_fist_stand:
+                    cont_['cont_num'] = cont_['text'].apply(lambda x: cont_num if re.search(r'^[0-9一二三四五六七八九十]{1,2}%s' % cont_str[1], x) else 0)
         else:
             cont_['cont_num'] = cont_num if para_type else 0
 
