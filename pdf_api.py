@@ -264,7 +264,7 @@ class Cont_Para_Tbl_Stand():
         # 第一次匹配数据“第一节”
         if cont:
             if len(cont) > 1:
-                cont_['cont_num'] = cont_['text'].apply(lambda x: cont_num if re.search(r'^%s{1}.{%s}[0-9一二三四五六七八九十]{1,2}\D{1}' % (cont[0] if cont[0] != '(' else '\(', len(cont) - 1), str(x)) and '附件' not in x else 0)
+                cont_['cont_num'] = cont_['text'].apply(lambda x: cont_num if re.search(r'^%s' % cont[0] if cont[0] != '(' else '\(', str(x)) and '附件' not in x else 0)
             else:
                 cont_str = cont_.iloc[num, :]['text']
                 cont_['cont_num'] = cont_['text'].apply(lambda x: cont_num if re.search(r'^[0-9一二三四五六七八九十]{1,2}%s' % cont_str[1], x) else 0)

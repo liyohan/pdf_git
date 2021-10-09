@@ -1,15 +1,12 @@
 import pdfplumber
-import pandas as pd
 import pdf_table_frame
 import configparser
-
+import threadpool
 
 from sklearn.externals import joblib
 from pdf_api import *
 
-
-file = '/home/sunday/Documents/win10/GIT/PDF_cs/111.pdf'
-# file = '2016-10-31_b6b486035cd04b6f6aad5bb366a173b1.pdf'
+file = '/home/sunday/Documents/win10/ldm/机器学习/pdf_files/2021-08-31_183d679c4c90fd6dcd98a48e8ac02440.pdf'
 with pdfplumber.open(file) as pdf:
     config = configparser.ConfigParser()
     config.read('dict.conf', encoding='utf-8')
@@ -35,15 +32,14 @@ with pdfplumber.open(file) as pdf:
     ]
 
     # 导入页眉页脚判断模型
-    clf = joblib.load('ym.pkl')
-
+    clf = joblib.load(config['ym_demo']['values'])
     # 段落模型
-    para_clf = joblib.load('para.pkl')
-
+    para_clf = joblib.load(config['para_demo']['values'])
     pdf_df = pd.DataFrame()
-    for i in range(len(pdf.pages)):
-        print(i)
-        page = pdf.pages[i]  # 第一页的信息
+
+    # for i in range(3,5):
+    for i in tqdm(range(len(pdf.pages)), desc='PDF_Tabel_Stand'):  # 显示进度条操作
+        page = pdf.pages[i]
         # 获取字体所有基础信息
         page_df = pd.DataFrame(columns=columns)
         if 'char' not in page.objects:
@@ -55,26 +51,32 @@ with pdfplumber.open(file) as pdf:
         # 本页数据解析完成后，进行清洗
         page_df.reset_index(drop=True, inplace=True)
         data = PDF_Standard(page_df).standard()
-
         # 获取表格内容 (x0, top, x1, bottom)
         tabel_index_list = pdf_table_frame.find_table_coord(page)
         # 整合表格内容与段落内容
         data = PDF_Tabel_Standard(data, tabel_index_list).table_standard(clf, config)
-
         pdf_df = pd.concat([pdf_df, data], sort=True)
 
     pdf_df.reset_index(drop=True, inplace=True)
-    # 段落连续模型判断
-    pdf_df = para_line(pdf_df, para_clf, config)
 
-    pdf_df.reset_index(drop=True, inplace=True)
-    pdf_df.to_csv('model9_return.csv')
+    # 目录标题和段落处理
+    pdf_df = Cont_Para_Tbl_Stand(pdf_df, config).stand()
+
+    # 段落连续模型判断(目前准确率只有95%待加强，暂时关闭)
+    # pdf_df = para_line(pdf_df, para_clf, config)
+
+    pdf_df.to_csv('model11_return.csv')
 
 
-
-
+    # # 建立线程列表 -------------------------------
+    # time1 = time.time()
+    # executor = ThreadPoolExecutor(max_workers=10)
+    # all_task = [executor.submit(wroks, (page, columns, pdf_table_frame, pdf_df, clf, config)) for page in pdf.pages]
+    # wait(all_task, return_when=ALL_COMPLETED)
     # print(pdf_df)
-    # print(pdf_df.info())
+    # print(time.time()-time1)
+
+
 
 
 
